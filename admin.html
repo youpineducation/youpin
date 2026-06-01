@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>YP皇家助教俱乐部 · 管理人系统</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, 'Segoe UI', 'Inter', sans-serif; }
+        body { background: #eef2f7; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .card { background: white; border-radius: 32px; padding: 24px 28px; margin-bottom: 24px; box-shadow: 0 8px 20px rgba(0,0,0,0.05); }
+        .header { background: linear-gradient(135deg, #1a2c3c, #1e3f52); border-radius: 48px; padding: 16px 28px; color: white; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
+        .logo-area { display: flex; align-items: center; gap: 16px; }
+        .logo-text { background: white; border-radius: 20px; padding: 6px 20px; text-align: center; }
+        .logo-text div:first-child { font-size: 12px; font-weight: bold; color: #1e3b4a; }
+        .logo-text div:nth-child(2) { font-size: 20px; font-weight: 800; color: #d97706; }
+        .logo-text div:last-child { font-size: 10px; color: #5a6e7c; }
+        button { background: #2c5f6e; border: none; padding: 8px 20px; border-radius: 40px; font-weight: 600; color: white; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #1f4552; transform: translateY(-1px); }
+        button.success { background: #2c7a5e; }
+        button.danger { background: #bc544b; }
+        button.secondary { background: #6c757d; }
+        .tab-bar { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+        .tab-btn { background: #e2e8f0; color: #1e3a4d; padding: 10px 24px; border-radius: 40px; font-weight: 600; cursor: pointer; }
+        .tab-btn.active { background: #2c5f6e; color: white; }
+        .panel { display: none; }
+        .panel.active { display: block; }
+        .flex-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; margin-bottom: 20px; }
+        input, select { padding: 10px 16px; border-radius: 48px; border: 1px solid #cbd5e1; font-size: 0.9rem; outline: none; width: 100%; }
+        .password-wrapper { position: relative; width: 100%; }
+        .password-wrapper input { padding-right: 45px; }
+        .toggle-pwd { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); cursor: pointer; background: none; border: none; font-size: 1.2rem; color: #5f7f8c; }
+        table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+        th, td { text-align: left; padding: 12px 8px; border-bottom: 1px solid #eef2f8; }
+        .info-bar { background: #eef2ff; padding: 12px 20px; border-radius: 60px; margin-bottom: 20px; font-size: 0.85rem; }
+        .inline-icon { cursor: pointer; margin-left: 6px; opacity: 0.7; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background: white; border-radius: 36px; max-width: 420px; width: 90%; padding: 28px 24px; }
+        .modal-buttons { display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px; }
+        @media (max-width: 700px) { .card { padding: 18px; } .tab-btn { padding: 6px 14px; } }
+    </style>
+</head>
+<body>
+<div class="container" id="app"></div>
+
+<!-- 修改密码模态框 -->
+<div id="changePwdModal" class="modal">
+    <div class="modal-content">
+        <h3>🔐 修改管理员密码</h3>
+        <div class="password-wrapper" style="margin-bottom: 16px;">
+            <input type="password" id="oldPwdInput" placeholder="当前密码">
+            <span class="toggle-pwd" data-target="oldPwdInput">👁️</span>
+        </div>
+        <div class="password-wrapper" style="margin-bottom: 16px;">
+            <input type="password" id="newPwdInput" placeholder="新密码">
+            <span class="toggle-pwd" data-target="newPwdInput">👁️</span>
+        </div>
+        <div class="password-wrapper" style="margin-bottom: 16px;">
+            <input type="password" id="confirmPwdInput" placeholder="确认新密码">
+            <span class="toggle-pwd" data-target="confirmPwdInput">👁️</span>
+        </div>
+        <div id="pwdModalMsg" style="color:#bc544b; font-size:0.8rem; margin-bottom: 12px;"></div>
+        <div class="modal-buttons">
+            <button id="cancelPwdBtn" class="secondary">取消</button>
+            <button id="confirmPwdBtn" class="success">确认修改</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ========== 存储 KEY 定义（与助教系统完全一致） ==========
+    const KEYS = {
+        coaches: 'yp_coaches_data',
+        pointProjects: 'yp_point_projects',
+        storeItems: 'yp_store_items',
+        pointRecords: 'yp_point_records',
+        redemptionLogs: 'yp_redemption_logs'
+    };
+    const ADMIN_PWD_KEY = 'yp_admin_password';
+
+    // ---------- 安全初始化（仅当数据为空时写入默认） ----------
+    function initDataSafe() {
+        if (!localStorage.getItem(ADMIN_PWD_KEY)) localStorage.setItem(ADMIN_PWD_KEY, 'admin123');
+        if (!localStorage.getItem(KEYS.coaches)) {
+            localStorage.setItem(KEYS.coaches, JSON.stringify([
+                { id: "c1", chineseName: "陈小希", englishName: "Chen Xiaoxi", nickname: "小希", ic: "IC10001" },
+                { id: "c2", chineseName: "林杨", englishName: "Lin Yang", nickname: "Yang", ic: "IC10002" },
+                { id: "c3", chineseName: "余周周", englishName: "Yu Zhouzhou", nickname: "周周", ic: "IC10003" }
+            ]));
+        }
+        if (!localStorage.getItem(KEYS.pointProjects)) {
+            localStorage.setItem(KEYS.pointProjects, JSON.stringify([
+                { id: "p1", name: "日常训练积分", points: 10 },
+                { id: "p2", name: "全勤奖励", points: 20 },
+                { id: "p3", name: "助教贡献", points: 30 }
+            ]));
+        }
+        if (!localStorage.getItem(KEYS.storeItems)) {
+            localStorage.setItem(KEYS.storeItems, JSON.stringify([
+                { id: "s1", name: "YP定制水杯", pointsCost: 150 },
+                { id: "s2", name: "皇家助教徽章", pointsCost: 80 },
+                { id: "s3", name: "俱乐部笔记本", pointsCost: 200 }
+            ]));
+        }
+        if (!localStorage.getItem(KEYS.pointRecords)) {
+            const coaches = JSON.parse(localStorage.getItem(KEYS.coaches));
+            const projects = JSON.parse(localStorage.getItem(KEYS.pointProjects));
+            const records = [];
+            if (coaches.length && projects.length) {
+                records.push({ id: "r1", coachId: coaches[0].id, projectId: projects[0].id, points: 15, dateTime: new Date().toISOString(), description: "训练表现优异" });
+                records.push({ id: "r2", coachId: coaches[1].id, projectId: projects[1].id, points: 20, dateTime: new Date().toISOString(), description: "全勤" });
+                records.push({ id: "r3", coachId: coaches[2].id, projectId: projects[2].id, points: 35, dateTime: new Date().toISOString(), description: "突出贡献" });
+            }
+            localStorage.setItem(KEYS.pointRecords, JSON.stringify(records));
+        }
+        if (!localStorage.getItem(KEYS.redemptionLogs)) {
+            localStorage.setItem(KEYS.redemptionLogs, JSON.stringify([]));
+        }
+    }
+
+    function getData(key) { return JSON.parse(localStorage.getItem(key) || '[]'); }
+    function setData(key, data) { localStorage.setItem(key, JSON.stringify(data)); }
+    function genId(prefix) { return prefix + Date.now() + '-' + Math.random().toString(36).substr(2, 6); }
+
+    function getCoachTotalPoints(coachId) {
+        return getData(KEYS.pointRecords).filter(r => r.coachId === coachId).reduce((s, r) => s + r.points, 0);
+    }
+    function getAllCoachesWithPoints() {
+        return getData(KEYS.coaches).map(c => ({ ...c, totalPoints: getCoachTotalPoints(c.id) }));
+    }
+    function getAllRecordsWithDetails() {
+        const records = getData(KEYS.pointRecords);
+        const coaches = getData(KEYS.coaches);
+        const projects = getData(KEYS.pointProjects);
+        return records.map(rec => {
+            const coach = coaches.find(c => c.id === rec.coachId);
+            const project = projects.find(p => p.id === rec.projectId);
+            return { ...rec, coachDisplay: coach ? `${coach.chineseName} (${coach.nickname})` : '已删除', projectName: project ? project.name : '已删除', dateStr: new Date(rec.dateTime).toLocaleString() };
+        }).sort((a,b) => new Date(b.dateTime) - new Date(a.dateTime));
+    }
+    function getAllRedemptionLogs() {
+        const logs = getData(KEYS.redemptionLogs);
+        const coaches = getData(KEYS.coaches);
+        return logs.map(log => ({ ...log, coachName: coaches.find(c => c.id === log.coachId)?.chineseName || '已删除', dateStr: new Date(log.dateTime).toLocaleString() }));
+    }
+
+    let adminAuth = false;
+    let currentTab = 'coaches';
+    const appDiv = document.getElementById('app');
+
+    // 小眼睛通用绑定
+    function bindPasswordToggles() {
+        document.querySelectorAll('.toggle-pwd').forEach(toggle => {
+            if (toggle.dataset.bound === 'true') return;
+            toggle.dataset.bound = 'true';
+            toggle.addEventListener('click', (e) => {
+                const targetId = toggle.getAttribute('data-target');
+                const input = document.getElementById(targetId);
+                if (input) {
+                    const type = input.type === 'password' ? 'text' : 'password';
+                    input.type = type;
+                    toggle.textContent = type === 'password' ? '👁️' : '🙈';
+                } else {
+                    const wrapper = toggle.parentElement;
+                    const inp = wrapper.querySelector('input');
+                    if (inp) {
+                        const newType = inp.type === 'password' ? 'text' : 'password';
+                        inp.type = newType;
+                        toggle.textContent = newType === 'password' ? '👁️' : '🙈';
+                    }
+                }
+            });
+        });
+    }
+
+    function render() {
+        if (!adminAuth) renderLogin();
+        else renderDashboard();
+    }
+
+    function renderLogin() {
+        appDiv.innerHTML = `
+            <div class="card" style="max-width:480px; margin:80px auto; text-align:center">
+                <h2>👑 YP皇家助教</h2><p>管理人系统</p>
+                <div style="margin:24px auto; width:80%;">
+                    <div class="password-wrapper">
+                        <input type="password" id="adminPwd" placeholder="管理密码">
+                        <span class="toggle-pwd" data-target="adminPwd">👁️</span>
+                    </div>
+                </div>
+                <button id="loginBtn">进入后台</button>
+                <div id="loginMsg" class="info-bar" style="display:none; margin-top:16px"></div>
+                <p style="margin-top:20px">默认密码: admin123 | 登录后请修改</p>
+            </div>
+        `;
+        bindPasswordToggles();
+        document.getElementById('loginBtn').onclick = () => {
+            const pwd = document.getElementById('adminPwd').value;
+            if (pwd === localStorage.getItem(ADMIN_PWD_KEY)) {
+                adminAuth = true;
+                render();
+            } else {
+                const msg = document.getElementById('loginMsg');
+                msg.style.display = 'block';
+                msg.innerText = '❌ 密码错误';
+                msg.style.background = '#ffe6e5';
+                setTimeout(() => msg.style.display = 'none', 1500);
+            }
+        };
+    }
+
+    function renderDashboard() {
+        appDiv.innerHTML = `
+            <div class="header">
+                <div class="logo-area">
+                    <div class="logo-text"><div>EDUCATION</div><div>YOU PIN</div><div>00</div></div>
+                    <div><h1>⚙️ 稳定版管理人系统</h1><p>数据本地存储 | 可导出备份</p></div>
+                </div>
+                <div style="display:flex; gap:12px">
+                    <button id="exportBtn">📁 导出备份</button>
+                    <button id="importBtn">📂 导入恢复</button>
+                    <button id="changePwdBtn">🔑 改密</button>
+                    <button id="logoutBtn">🚪 退出</button>
+                </div>
+            </div>
+            <div class="info-bar">💡 提示：所有数据保存在您当前浏览器的本地存储中。添加助教后立刻显示，不会丢失。如需迁移，请使用“导出备份”功能。</div>
+            <div class="tab-bar">
+                <div class="tab-btn ${currentTab === 'coaches' ? 'active' : ''}" data-tab="coaches">👥 助教管理</div>
+                <div class="tab-btn ${currentTab === 'projects' ? 'active' : ''}" data-tab="projects">🏷️ 积分项目</div>
+                <div class="tab-btn ${currentTab === 'store' ? 'active' : ''}" data-tab="store">🎁 商店兑换</div>
+                <div class="tab-btn ${currentTab === 'records' ? 'active' : ''}" data-tab="records">📝 积分记录</div>
+            </div>
+            <div id="coachesPanel" class="panel ${currentTab === 'coaches' ? 'active' : ''}"></div>
+            <div id="projectsPanel" class="panel ${currentTab === 'projects' ? 'active' : ''}"></div>
+            <div id="storePanel" class="panel ${currentTab === 'store' ? 'active' : ''}"></div>
+            <div id="recordsPanel" class="panel ${currentTab === 'records' ? 'active' : ''}"></div>
+        `;
+
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.onclick = () => {
+                currentTab = btn.dataset.tab;
+                renderDashboard();
+            };
+        });
+
+        document.getElementById('exportBtn').onclick = exportBackup;
+        document.getElementById('importBtn').onclick = () => { const input = document.createElement('input'); input.type = 'file'; input.accept = 'application/json'; input.onchange = e => importBackup(e.target.files[0]); input.click(); };
+        document.getElementById('changePwdBtn').onclick = showChangePasswordModal;
+        document.getElementById('logoutBtn').onclick = () => { adminAuth = false; render(); };
+
+        loadCoachesPanel();
+        loadProjectsPanel();
+        loadStorePanel();
+        loadRecordsPanel();
+    }
+
+    function showChangePasswordModal() {
+        const modal = document.getElementById('changePwdModal');
+        const oldInput = document.getElementById('oldPwdInput');
+        const newInput = document.getElementById('newPwdInput');
+        const confirmInput = document.getElementById('confirmPwdInput');
+        const msgDiv = document.getElementById('pwdModalMsg');
+        oldInput.value = ''; newInput.value = ''; confirmInput.value = '';
+        msgDiv.innerText = '';
+        modal.style.display = 'flex';
+        document.querySelectorAll('#changePwdModal .toggle-pwd').forEach(t => t.textContent = '👁️');
+        bindPasswordToggles();
+
+        const confirmBtn = document.getElementById('confirmPwdBtn');
+        const cancelBtn = document.getElementById('cancelPwdBtn');
+        const handleConfirm = () => {
+            const oldPwd = oldInput.value;
+            const newPwd = newInput.value;
+            const confirmPwd = confirmInput.value;
+            const stored = localStorage.getItem(ADMIN_PWD_KEY);
+            if (oldPwd !== stored) { msgDiv.innerText = '❌ 当前密码不正确'; return; }
+            if (!newPwd || newPwd.length < 4) { msgDiv.innerText = '❌ 新密码长度至少4位'; return; }
+            if (newPwd !== confirmPwd) { msgDiv.innerText = '❌ 两次新密码不一致'; return; }
+            localStorage.setItem(ADMIN_PWD_KEY, newPwd);
+            msgDiv.innerText = '✅ 密码修改成功！请重新登录。';
+            msgDiv.style.color = '#2c7a5e';
+            setTimeout(() => {
+                modal.style.display = 'none';
+                alert('密码已更新，请使用新密码重新登录。');
+                adminAuth = false;
+                render();
+            }, 800);
+        };
+        const handleCancel = () => { modal.style.display = 'none'; };
+        confirmBtn.removeEventListener('click', handleConfirm);
+        cancelBtn.removeEventListener('click', handleCancel);
+        confirmBtn.addEventListener('click', handleConfirm);
+        cancelBtn.addEventListener('click', handleCancel);
+        modal.addEventListener('click', (e) => { if (e.target === modal) handleCancel(); }, { once: true });
+    }
+
+    // ========== 助教管理模块 ==========
+    function loadCoachesPanel() {
+        const panel = document.getElementById('coachesPanel');
+        const coaches = getAllCoachesWithPoints();
+        panel.innerHTML = `
+            <div class="card">
+                <h3>📋 助教管理（增删改查）</h3>
+                <div class="flex-row">
+                    <input type="text" id="newCn" placeholder="华文名" style="flex:1">
+                    <input type="text" id="newEn" placeholder="英文名" style="flex:1">
+                    <input type="text" id="newNick" placeholder="昵称" style="flex:1">
+                    <input type="text" id="newIc" placeholder="IC" style="flex:1">
+                    <button id="addCoachBtn" class="success">➕ 添加</button>
+                </div>
+                <div style="overflow-x:auto">
+                    <table><thead><tr><th>华文名</th><th>英文名</th><th>昵称</th><th>IC</th><th>总积分</th><th>操作</th></tr></thead><tbody id="coachTbody"></tbody></table>
+                </div>
+            </div>
+        `;
+        function refreshTable() {
+            const all = getAllCoachesWithPoints();
+            const tbody = document.getElementById('coachTbody');
+            tbody.innerHTML = all.map(c => `
+                <tr>
+                    <td>${escapeHtml(c.chineseName)} <span class="inline-icon edit-coach" data-id="${c.id}">✏️</span></td>
+                    <td>${escapeHtml(c.englishName)}</td>
+                    <td>${escapeHtml(c.nickname)}</td>
+                    <td>${escapeHtml(c.ic)}</td>
+                    <td class="member-points" style="color:#d97706">${c.totalPoints}</td>
+                    <td><button class="danger small del-coach" data-id="${c.id}">删除</button></td>
+                </table>
+            `).join('');
+            document.querySelectorAll('.edit-coach').forEach(el => {
+                el.onclick = () => {
+                    const id = el.dataset.id;
+                    let coaches = getData(KEYS.coaches);
+                    const coach = coaches.find(c => c.id === id);
+                    if (!coach) return;
+                    const newCn = prompt("华文名", coach.chineseName); if (newCn) coach.chineseName = newCn.trim();
+                    const newEn = prompt("英文名", coach.englishName); if (newEn) coach.englishName = newEn.trim();
+                    const newNick = prompt("昵称", coach.nickname); if (newNick !== null) coach.nickname = newNick.trim();
+                    const newIc = prompt("IC", coach.ic); if (newIc) coach.ic = newIc.trim();
+                    setData(KEYS.coaches, coaches);
+                    loadCoachesPanel();
+                };
+            });
+            document.querySelectorAll('.del-coach').forEach(btn => {
+                btn.onclick = () => {
+                    if (confirm('删除助教将同时删除其积分记录和兑换记录')) {
+                        let coaches = getData(KEYS.coaches);
+                        let records = getData(KEYS.pointRecords);
+                        let redemptions = getData(KEYS.redemptionLogs);
+                        coaches = coaches.filter(c => c.id !== btn.dataset.id);
+                        records = records.filter(r => r.coachId !== btn.dataset.id);
+                        redemptions = redemptions.filter(r => r.coachId !== btn.dataset.id);
+                        setData(KEYS.coaches, coaches);
+                        setData(KEYS.pointRecords, records);
+                        setData(KEYS.redemptionLogs, redemptions);
+                        loadCoachesPanel();
+                    }
+                };
+            });
+        }
+        refreshTable();
+        document.getElementById('addCoachBtn').onclick = () => {
+            const cn = document.getElementById('newCn').value.trim();
+            const en = document.getElementById('newEn').value.trim();
+            const nick = document.getElementById('newNick').value.trim();
+            const ic = document.getElementById('newIc').value.trim();
+            if (!cn || !en || !ic) { alert('华文名、英文名、IC不能为空'); return; }
+            let coaches = getData(KEYS.coaches);
+            if (coaches.some(c => c.ic === ic)) { alert('IC已存在'); return; }
+            coaches.push({ id: genId('c'), chineseName: cn, englishName: en, nickname: nick || en, ic: ic });
+            setData(KEYS.coaches, coaches);
+            loadCoachesPanel();
+        };
+    }
+
+    // ========== 积分项目管理 ==========
+    function loadProjectsPanel() {
+        const panel = document.getElementById('projectsPanel');
+        panel.innerHTML = `<div class="card"><h3>🏷️ 积分项目</h3><div class="flex-row"><input id="newProjName" placeholder="项目名称"><input id="newProjPoints" type="number" placeholder="分值"><button id="addProjBtn" class="success">➕ 添加</button></div><div style="overflow-x:auto"><table><thead><tr><th>项目名称</th><th>分值</th><th>操作</th></tr></thead><tbody id="projTbody"></tbody></table></div></div>`;
+        function refresh() {
+            const projects = getData(KEYS.pointProjects);
+            const tbody = document.getElementById('projTbody');
+            tbody.innerHTML = projects.map(p => `<tr><td>${escapeHtml(p.name)} <span class="edit-proj inline-icon" data-id="${p.id}">✏️</span></td><td>${p.points}</td><td><button class="danger del-proj" data-id="${p.id}">删除</button></td></tr>`).join('');
+            document.querySelectorAll('.edit-proj').forEach(el => {
+                el.onclick = () => {
+                    const id = el.dataset.id;
+                    let projects = getData(KEYS.pointProjects);
+                    const proj = projects.find(p => p.id === id);
+                    if (!proj) return;
+                    const newName = prompt("项目名称", proj.name); if (newName) proj.name = newName.trim();
+                    const newPoints = parseInt(prompt("分值", proj.points)); if (!isNaN(newPoints)) proj.points = newPoints;
+                    setData(KEYS.pointProjects, projects);
+                    loadProjectsPanel();
+                };
+            });
+            document.querySelectorAll('.del-proj').forEach(btn => {
+                btn.onclick = () => {
+                    if (confirm('删除项目会删除所有相关积分记录')) {
+                        let projects = getData(KEYS.pointProjects);
+                        let records = getData(KEYS.pointRecords);
+                        projects = projects.filter(p => p.id !== btn.dataset.id);
+                        records = records.filter(r => r.projectId !== btn.dataset.id);
+                        setData(KEYS.pointProjects, projects);
+                        setData(KEYS.pointRecords, records);
+                        loadProjectsPanel();
+                    }
+                };
+            });
+        }
+        refresh();
+        document.getElementById('addProjBtn').onclick = () => {
+            const name = document.getElementById('newProjName').value.trim();
+            const points = parseInt(document.getElementById('newProjPoints').value);
+            if (!name || isNaN(points)) { alert('请输入有效名称和分值'); return; }
+            let projects = getData(KEYS.pointProjects);
+            projects.push({ id: genId('p'), name, points });
+            setData(KEYS.pointProjects, projects);
+            loadProjectsPanel();
+        };
+    }
+
+    // ========== 商店兑换管理 ==========
+    function loadStorePanel() {
+        const panel = document.getElementById('storePanel');
+        panel.innerHTML = `<div class="card"><h3>🎁 商店管理</h3><div class="flex-row"><input id="newItemName" placeholder="商品名称"><input id="newItemCost" type="number" placeholder="所需积分"><button id="addItemBtn" class="success">➕ 添加商品</button></div><div style="overflow-x:auto"><table><thead><tr><th>商品名</th><th>所需积分</th><th>操作</th></tr></thead><tbody id="storeTbody"></tbody></table></div><hr><h4>🎁 执行兑换</h4><div class="flex-row"><select id="exchangeCoach"></select><select id="exchangeItem"></select><button id="doExchangeBtn" class="success">确认兑换</button></div><div id="exchangeMsg" class="info-bar" style="display:none"></div><hr><h4>📜 兑换记录</h4><div style="overflow-x:auto"><table><thead><tr><th>助教</th><th>商品</th><th>消耗积分</th><th>时间</th></tr></thead><tbody id="exchangeLogTbody"></tbody></table></div></div>`;
+        function refreshStoreList() {
+            const items = getData(KEYS.storeItems);
+            const tbody = document.getElementById('storeTbody');
+            tbody.innerHTML = items.map(i => `<tr><td>${escapeHtml(i.name)}</td><td>${i.pointsCost}</td><td><button class="danger del-item" data-id="${i.id}">删除</button></td></tr>`).join('');
+            document.querySelectorAll('.del-item').forEach(btn => {
+                btn.onclick = () => {
+                    let items = getData(KEYS.storeItems);
+                    items = items.filter(i => i.id !== btn.dataset.id);
+                    setData(KEYS.storeItems, items);
+                    loadStorePanel();
+                };
+            });
+        }
+        refreshStoreList();
+        document.getElementById('addItemBtn').onclick = () => {
+            const name = document.getElementById('newItemName').value.trim();
+            const cost = parseInt(document.getElementById('newItemCost').value);
+            if (!name || isNaN(cost)) { alert('填写完整'); return; }
+            let items = getData(KEYS.storeItems);
+            items.push({ id: genId('s'), name, pointsCost: cost });
+            setData(KEYS.storeItems, items);
+            loadStorePanel();
+        };
+        const coaches = getAllCoachesWithPoints();
+        const items = getData(KEYS.storeItems);
+        const coachSel = document.getElementById('exchangeCoach');
+        const itemSel = document.getElementById('exchangeItem');
+        coachSel.innerHTML = '<option value="">-- 选择助教 --</option>' + coaches.map(c => `<option value="${c.id}">${c.chineseName} (${c.totalPoints}分)</option>`).join('');
+        itemSel.innerHTML = '<option value="">-- 选择商品 --</option>' + items.map(i => `<option value="${i.id}" data-cost="${i.pointsCost}">${i.name} (${i.pointsCost}分)</option>`).join('');
+        document.getElementById('doExchangeBtn').onclick = () => {
+            const coachId = coachSel.value;
+            const itemId = itemSel.value;
+            if (!coachId || !itemId) { alert('请选择助教和商品'); return; }
+            const coach = coaches.find(c => c.id === coachId);
+            const item = items.find(i => i.id === itemId);
+            if (!coach || !item) return;
+            if (coach.totalPoints < item.pointsCost) { alert('积分不足'); return; }
+            if (confirm(`确认让 ${coach.chineseName} 消耗 ${item.pointsCost} 积分兑换 ${item.name} 吗？`)) {
+                let records = getData(KEYS.pointRecords);
+                records.push({ id: genId('ex'), coachId, projectId: 'exchange_deduct', points: -item.pointsCost, dateTime: new Date().toISOString(), description: `兑换 ${item.name}` });
+                setData(KEYS.pointRecords, records);
+                let logs = getData(KEYS.redemptionLogs);
+                logs.push({ id: genId('log'), coachId, itemId, itemName: item.name, pointsSpent: item.pointsCost, dateTime: new Date().toISOString() });
+                setData(KEYS.redemptionLogs, logs);
+                alert('兑换成功');
+                loadStorePanel();
+            }
+        };
+        const logs = getAllRedemptionLogs();
+        const logTbody = document.getElementById('exchangeLogTbody');
+        logTbody.innerHTML = logs.map(l => `<tr><td>${escapeHtml(l.coachName)}</td><td>${escapeHtml(l.itemName)}</td><td style="color:#bc544b">-${l.pointsSpent}</td><td>${l.dateStr}</td></tr>`).join('');
+        if (logs.length === 0) logTbody.innerHTML = '<tr><td colspan="4">暂无兑换记录</td></tr>';
+    }
+
+    // ========== 积分记录模块 ==========
+    function loadRecordsPanel() {
+        const panel = document.getElementById('recordsPanel');
+        panel.innerHTML = `<div class="card"><h3>📝 积分记录</h3><div class="flex-row"><select id="recCoach"></select><select id="recProject"></select><input type="number" id="recPoints" placeholder="±分数" value="10"><button id="addRecBtn" class="success">授予/扣除</button></div><div style="overflow-x:auto"><table><thead><tr><th>助教</th><th>项目</th><th>分值</th><th>时间</th><th>说明</th><th>操作</th></tr></thead><tbody id="recTbody"></tbody></table></div></div>`;
+        const coaches = getData(KEYS.coaches);
+        const projects = getData(KEYS.pointProjects);
+        document.getElementById('recCoach').innerHTML = coaches.map(c => `<option value="${c.id}">${c.chineseName} (${c.nickname})</option>`).join('');
+        document.getElementById('recProject').innerHTML = projects.map(p => `<option value="${p.id}">${p.name} (${p.points}分)</option>`).join('');
+        function refreshRecords() {
+            const all = getAllRecordsWithDetails();
+            const tbody = document.getElementById('recTbody');
+            tbody.innerHTML = all.map(r => `<tr><td>${escapeHtml(r.coachDisplay)}</td><td>${escapeHtml(r.projectName)}</td><td style="color:${r.points<0?'#bc544b':'#2c7a5e'}">${r.points>0?`+${r.points}`:r.points}</td><td>${r.dateStr}</td><td>${escapeHtml(r.description)}</td><td><button class="danger del-rec" data-id="${r.id}">删除</button></td></tr>`).join('');
+            document.querySelectorAll('.del-rec').forEach(btn => {
+                btn.onclick = () => {
+                    let records = getData(KEYS.pointRecords);
+                    records = records.filter(r => r.id !== btn.dataset.id);
+                    setData(KEYS.pointRecords, records);
+                    refreshRecords();
+                };
+            });
+        }
+        refreshRecords();
+        document.getElementById('addRecBtn').onclick = () => {
+            const coachId = document.getElementById('recCoach').value;
+            const projectId = document.getElementById('recProject').value;
+            let points = parseInt(document.getElementById('recPoints').value);
+            if (isNaN(points)) points = 0;
+            if (!coachId || !projectId) { alert('请选择'); return; }
+            let records = getData(KEYS.pointRecords);
+            records.push({ id: genId('rec'), coachId, projectId, points, dateTime: new Date().toISOString(), description: '管理员操作' });
+            setData(KEYS.pointRecords, records);
+            refreshRecords();
+        };
+    }
+
+    // ========== 导入导出 ==========
+    function exportBackup() {
+        const backup = {
+            coaches: getData(KEYS.coaches),
+            pointProjects: getData(KEYS.pointProjects),
+            storeItems: getData(KEYS.storeItems),
+            pointRecords: getData(KEYS.pointRecords),
+            redemptionLogs: getData(KEYS.redemptionLogs),
+            adminPassword: localStorage.getItem(ADMIN_PWD_KEY)
+        };
+        const blob = new Blob([JSON.stringify(backup, null, 2)], {type: 'application/json'});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `yp_backup_${new Date().toISOString().slice(0,19)}.json`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        alert('备份已导出');
+    }
+    function importBackup(file) {
+        const reader = new FileReader();
+        reader.onload = e => {
+            try {
+                const data = JSON.parse(e.target.result);
+                if (data.coaches) setData(KEYS.coaches, data.coaches);
+                if (data.pointProjects) setData(KEYS.pointProjects, data.pointProjects);
+                if (data.storeItems) setData(KEYS.storeItems, data.storeItems);
+                if (data.pointRecords) setData(KEYS.pointRecords, data.pointRecords);
+                if (data.redemptionLogs) setData(KEYS.redemptionLogs, data.redemptionLogs);
+                if (data.adminPassword) localStorage.setItem(ADMIN_PWD_KEY, data.adminPassword);
+                alert('导入成功，页面将刷新');
+                location.reload();
+            } catch(err) { alert('文件格式错误'); }
+        };
+        reader.readAsText(file);
+    }
+
+    function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, m => m==='&'?'&amp;': m==='<'?'&lt;':'&gt;'); }
+
+    initDataSafe();
+    render();
+</script>
+</body>
+</html>

@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>YP皇家助教俱乐部 · 助教系统</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, 'Segoe UI', 'Inter', sans-serif; }
+        body { background: linear-gradient(145deg, #f0f4fa, #e6ecf3); min-height: 100vh; padding: 20px; display: flex; align-items: center; justify-content: center; }
+        .login-card { max-width: 500px; width: 100%; background: white; border-radius: 48px; padding: 32px; box-shadow: 0 20px 35px rgba(0,0,0,0.1); margin: 20px; }
+        .hero { text-align: center; margin-bottom: 28px; }
+        .hero h1 { font-size: 1.8rem; background: linear-gradient(135deg,#1e3b4a,#2c6e8f); -webkit-background-clip: text; background-clip: text; color: transparent; }
+        .hero p { color: #5a6e7c; margin-top: 6px; }
+        .input-group { margin-bottom: 20px; }
+        .input-group label { display: block; font-weight: 600; margin-bottom: 6px; color: #1e3a4d; }
+        input { width: 100%; padding: 14px 18px; border-radius: 60px; border: 1.5px solid #e2e8f0; font-size: 1rem; outline: none; background: white; }
+        input:focus { border-color: #2c5f6e; box-shadow: 0 0 0 3px rgba(44,95,110,0.2); }
+        button { background: #2c7a5e; border: none; padding: 14px; border-radius: 60px; font-weight: 700; font-size: 1rem; color: white; width: 100%; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #205e48; transform: translateY(-1px); }
+        .message-bar { background: #eef2ff; padding: 12px; border-radius: 60px; margin-top: 16px; text-align: center; font-size: 0.85rem; }
+        .dashboard { max-width: 1200px; margin: 0 auto; }
+        .card { background: white; border-radius: 32px; padding: 24px; margin-bottom: 24px; box-shadow: 0 8px 20px rgba(0,0,0,0.05); }
+        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; background: white; border-radius: 32px; padding: 20px; margin-bottom: 24px; }
+        .points-badge { background: #fef3c7; padding: 8px 20px; border-radius: 40px; text-align: center; }
+        .points-badge .value { font-size: 1.8rem; font-weight: 800; color: #d97706; line-height: 1; }
+        .points-badge .label { font-size: 0.7rem; color: #b45f06; }
+        .tab-nav { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+        .tab-btn { background: #e2e8f0; color: #1e3a4d; padding: 10px 24px; border-radius: 40px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        .tab-btn.active { background: #2c5f6e; color: white; }
+        .tab-btn:hover:not(.active) { background: #cbd5e1; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 12px 8px; border-bottom: 1px solid #eef2f8; }
+        th { font-weight: 600; color: #1e3a4d; }
+        .shop-item { background: #f8fafc; border-radius: 24px; padding: 14px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #e2e8f0; flex-wrap: wrap; gap: 10px; }
+        .shop-item-info strong { font-size: 1rem; display: block; }
+        .shop-item-info span { font-size: 0.7rem; color: #4b6a7c; }
+        button:disabled { background: #b0bec5; cursor: not-allowed; transform: none; }
+        .empty-state { text-align: center; padding: 40px 16px; color: #6c7a89; font-style: italic; }
+        .logout-btn { background: #6c757d; width: auto; padding: 8px 20px; font-size: 0.85rem; margin-bottom: 16px; }
+        @media (max-width: 700px) { .tab-btn { padding: 6px 14px; font-size: 0.8rem; } .points-badge .value { font-size: 1.2rem; } }
+    </style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+    const KEYS = {
+        coaches: 'yp_coaches_data',
+        pointProjects: 'yp_point_projects',
+        storeItems: 'yp_store_items',
+        pointRecords: 'yp_point_records',
+        redemptionLogs: 'yp_redemption_logs'
+    };
+
+    function getData(key) { return JSON.parse(localStorage.getItem(key) || '[]'); }
+
+    function getCoachTotalPoints(coachId) {
+        const records = getData(KEYS.pointRecords);
+        return records.filter(r => r.coachId === coachId).reduce((sum, r) => sum + (r.points || 0), 0);
+    }
+
+    function getCoachPointDetails(coachId) {
+        const records = getData(KEYS.pointRecords);
+        const projects = getData(KEYS.pointProjects);
+        const filtered = records.filter(r => r.coachId === coachId).sort((a,b) => new Date(b.dateTime) - new Date(a.dateTime));
+        return filtered.map(rec => {
+            const project = projects.find(p => p.id === rec.projectId);
+            let typeName = rec.projectId === 'exchange_deduct' ? '🎁 商店兑换扣除' : (project ? project.name : '积分变动');
+            return {
+                id: rec.id,
+                typeName: typeName,
+                points: rec.points,
+                dateTime: new Date(rec.dateTime).toLocaleString(),
+                description: rec.description || (rec.projectId === 'exchange_deduct' ? '兑换商品' : '积分记录')
+            };
+        });
+    }
+
+    function getCoachRedemptions(coachId) {
+        const logs = getData(KEYS.redemptionLogs);
+        return logs.filter(log => log.coachId === coachId).sort((a,b) => new Date(b.dateTime) - new Date(a.dateTime)).map(log => ({
+            id: log.id,
+            itemName: log.itemName,
+            pointsSpent: log.pointsSpent,
+            dateTime: new Date(log.dateTime).toLocaleString()
+        }));
+    }
+
+    function getStoreItems() {
+        return getData(KEYS.storeItems);
+    }
+
+    let currentCoach = null;
+    let activeTab = 'points';
+    const appDiv = document.getElementById('app');
+
+    function render() {
+        if (!currentCoach) renderLogin();
+        else renderDashboard();
+    }
+
+    function renderLogin() {
+        appDiv.innerHTML = `
+            <div class="login-card">
+                <div class="hero">
+                    <h1>🏆 YP皇家助教俱乐部</h1>
+                    <p>助教专属系统 · 积分与兑换查询</p>
+                </div>
+                <div class="input-group">
+                    <label>助教姓名（华文）</label>
+                    <input type="text" id="loginName" placeholder="请填写华文姓名" autocomplete="off">
+                </div>
+                <div class="input-group">
+                    <label>IC号码</label>
+                    <input type="text" id="loginIc" placeholder="IC号码" autocomplete="off">
+                    <div style="font-size:0.7rem; color:#5f7f8c; margin-top:5px;">💡 提示：IC号码不需要输入横线“-”</div>
+                </div>
+                <button id="loginBtn">🔑 登录系统</button>
+                <div id="loginMsg" class="message-bar" style="display:none;"></div>
+                <hr style="margin:20px 0 12px;">
+                <div style="font-size:0.7rem; text-align:center;">※ 请使用管理员为您注册的华文姓名和IC登录</div>
+            </div>
+        `;
+
+        document.getElementById('loginBtn').onclick = () => {
+            const name = document.getElementById('loginName').value.trim();
+            let ic = document.getElementById('loginIc').value.trim();
+            const msgDiv = document.getElementById('loginMsg');
+
+            ic = ic.replace(/-/g, '');
+            document.getElementById('loginIc').value = ic;
+
+            if (name === "") {
+                msgDiv.style.display = 'block';
+                msgDiv.innerText = '❌ 请填写助教姓名';
+                msgDiv.style.background = '#ffe6e5';
+                setTimeout(() => msgDiv.style.display = 'none', 2500);
+                return;
+            }
+            if (ic === "") {
+                msgDiv.style.display = 'block';
+                msgDiv.innerText = '❌ 请填写IC号码';
+                msgDiv.style.background = '#ffe6e5';
+                setTimeout(() => msgDiv.style.display = 'none', 2500);
+                return;
+            }
+
+            const coaches = getData(KEYS.coaches);
+            const matched = coaches.find(c => c.chineseName === name && c.ic === ic);
+
+            if (matched) {
+                currentCoach = matched;
+                activeTab = 'points';
+                render();
+            } else {
+                msgDiv.style.display = 'block';
+                msgDiv.innerText = '❌ 姓名或IC不正确，请联系管理员核对（注意IC不要输入横线）。';
+                msgDiv.style.background = '#ffe6e5';
+                setTimeout(() => msgDiv.style.display = 'none', 3000);
+            }
+        };
+    }
+
+    function renderDashboard() {
+        const coach = currentCoach;
+        const totalPoints = getCoachTotalPoints(coach.id);
+        const pointDetails = getCoachPointDetails(coach.id);
+        const storeItems = getStoreItems();
+        const redemptions = getCoachRedemptions(coach.id);
+
+        appDiv.innerHTML = `
+            <div class="dashboard">
+                <div style="display: flex; justify-content: flex-end;">
+                    <button id="logoutBtn" class="logout-btn">🚪 退出登录</button>
+                </div>
+                <div class="header">
+                    <div>
+                        <h2>✨ 欢迎，${escapeHtml(coach.chineseName)} ${coach.nickname ? `(${escapeHtml(coach.nickname)})` : ''}</h2>
+                        <p style="color:#5a6e7c;">IC: ${escapeHtml(coach.ic)}</p>
+                    </div>
+                    <div class="points-badge">
+                        <div class="value">${totalPoints} 分</div>
+                        <div class="label">当前可用积分</div>
+                    </div>
+                </div>
+
+                <div class="tab-nav">
+                    <div class="tab-btn ${activeTab === 'points' ? 'active' : ''}" data-tab="points">📋 积分明细</div>
+                    <div class="tab-btn ${activeTab === 'store' ? 'active' : ''}" data-tab="store">🎁 商店兑换</div>
+                    <div class="tab-btn ${activeTab === 'rewards' ? 'active' : ''}" data-tab="rewards">📦 我的物品</div>
+                </div>
+
+                <div id="tabContent"></div>
+                <footer style="text-align:center; margin-top:32px; font-size:0.7rem; opacity:0.6;">YP皇家助教俱乐部 · 积分变动及兑换由管理员统一授权</footer>
+            </div>
+        `;
+
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.onclick = () => {
+                activeTab = btn.dataset.tab;
+                renderDashboard();
+            };
+        });
+
+        document.getElementById('logoutBtn').onclick = () => {
+            currentCoach = null;
+            render();
+        };
+
+        const contentDiv = document.getElementById('tabContent');
+
+        if (activeTab === 'points') {
+            if (pointDetails.length === 0) {
+                contentDiv.innerHTML = `<div class="card"><h3>📋 积分明细</h3><div class="empty-state">暂无积分记录</div></div>`;
+            } else {
+                contentDiv.innerHTML = `
+                    <div class="card">
+                        <h3>📋 积分明细</h3>
+                        <div style="overflow-x: auto;">
+                            <table>
+                                <thead><tr><th>时间</th><th>项目</th><th>分数</th></tr></thead>
+                                <tbody>
+                                    ${pointDetails.map(d => `
+                                        <tr>
+                                            <td><small>${escapeHtml(d.dateTime)}</small></td>
+                                            <td>${escapeHtml(d.typeName)}<br><span style="font-size:0.7rem;">${escapeHtml(d.description)}</span></td>
+                                            <td style="color:${d.points < 0 ? '#bc544b' : '#2c7a5e'}; font-weight:600;">${d.points > 0 ? `+${d.points}` : d.points}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+            }
+        } 
+        else if (activeTab === 'store') {
+            if (storeItems.length === 0) {
+                contentDiv.innerHTML = `<div class="card"><h3>🎁 商店兑换</h3><div class="empty-state">暂无商品，请等待管理员添加</div></div>`;
+            } else {
+                contentDiv.innerHTML = `
+                    <div class="card">
+                        <h3>🎁 助教商店 · 兑换目录</h3>
+                        <p style="margin-bottom:16px; color:#5f7f8c; font-size:0.8rem;">兑换需管理员授权，请勿自行操作</p>
+                        <div class="shop-list">
+                            ${storeItems.map(item => `
+                                <div class="shop-item">
+                                    <div class="shop-item-info">
+                                        <strong>${escapeHtml(item.name)}</strong>
+                                        <span>🏷️ 需要 ${item.pointsCost} 积分</span>
+                                    </div>
+                                    <button disabled>🔒 仅管理员可兑换</button>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+        } 
+        else if (activeTab === 'rewards') {
+            if (redemptions.length === 0) {
+                contentDiv.innerHTML = `<div class="card"><h3>📦 我已兑换的物品</h3><div class="empty-state">暂无兑换记录，联系管理员进行兑换操作</div></div>`;
+            } else {
+                contentDiv.innerHTML = `
+                    <div class="card">
+                        <h3>📦 我已兑换的物品</h3>
+                        <div style="overflow-x: auto;">
+                            <table>
+                                <thead><tr><th>物品名称</th><th>消耗积分</th><th>兑换时间</th></tr></thead>
+                                <tbody>
+                                    ${redemptions.map(r => `
+                                        <tr>
+                                            <td>${escapeHtml(r.itemName)}</td>
+                                            <td style="color:#bc544b;">-${r.pointsSpent}</td>
+                                            <td><small>${escapeHtml(r.dateTime)}</small></td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    function ensureMinimalData() {
+        if (!localStorage.getItem(KEYS.coaches)) {
+            localStorage.setItem(KEYS.coaches, JSON.stringify([
+                { id: "c1", chineseName: "陈小希", englishName: "Chen Xiaoxi", nickname: "小希", ic: "IC10001" },
+                { id: "c2", chineseName: "林杨", englishName: "Lin Yang", nickname: "Yang", ic: "IC10002" },
+                { id: "c3", chineseName: "余周周", englishName: "Yu Zhouzhou", nickname: "周周", ic: "IC10003" }
+            ]));
+        }
+        if (!localStorage.getItem(KEYS.pointProjects)) {
+            localStorage.setItem(KEYS.pointProjects, JSON.stringify([
+                { id: "p1", name: "日常训练积分", points: 10 },
+                { id: "p2", name: "全勤奖励", points: 20 },
+                { id: "p3", name: "助教贡献", points: 30 }
+            ]));
+        }
+        if (!localStorage.getItem(KEYS.storeItems)) {
+            localStorage.setItem(KEYS.storeItems, JSON.stringify([
+                { id: "s1", name: "YP定制水杯", pointsCost: 150 },
+                { id: "s2", name: "皇家助教徽章", pointsCost: 80 },
+                { id: "s3", name: "俱乐部笔记本", pointsCost: 200 }
+            ]));
+        }
+        if (!localStorage.getItem(KEYS.pointRecords)) {
+            const coaches = JSON.parse(localStorage.getItem(KEYS.coaches));
+            const projects = JSON.parse(localStorage.getItem(KEYS.pointProjects));
+            const now = new Date();
+            const records = [];
+            if (coaches.length && projects.length) {
+                records.push({ id: "r1", coachId: coaches[0].id, projectId: projects[0].id, points: 15, dateTime: new Date(now.getTime() - 86400000).toISOString(), description: "训练表现优异" });
+                records.push({ id: "r2", coachId: coaches[1].id, projectId: projects[1].id, points: 20, dateTime: new Date(now.getTime() - 43200000).toISOString(), description: "全勤" });
+                records.push({ id: "r3", coachId: coaches[2].id, projectId: projects[2].id, points: 35, dateTime: new Date().toISOString(), description: "突出贡献" });
+            }
+            localStorage.setItem(KEYS.pointRecords, JSON.stringify(records));
+        }
+        if (!localStorage.getItem(KEYS.redemptionLogs)) {
+            localStorage.setItem(KEYS.redemptionLogs, JSON.stringify([]));
+        }
+    }
+
+    ensureMinimalData();
+    render();
+</script>
+</body>
+</html>
